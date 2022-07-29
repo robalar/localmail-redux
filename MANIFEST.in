@@ -1,0 +1,7 @@
+include *.tac
+include *.txt
+include *.rst
+include muttrc
+include twisted/plugins/*.py
+recursive-include localmail/templates *.html
+
