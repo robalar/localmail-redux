@@ -1,9 +1,16 @@
 import smtplib
 import imaplib
+
+from crochet import run_in_reactor, setup
+
+import localmail
+
 try:
     from email import message_from_bytes as message_from_string
 except ImportError:
     from email import message_from_string
+
+setup()
 
 
 class ContextHelper(object):
@@ -104,3 +111,10 @@ class IMAPClient(ContextHelper):
         else:
             msg_set = str(seq).encode('ascii')
         return msg_set
+
+
+@run_in_reactor
+def start_server(
+    smtp_port=2025, imap_port=2143, http_port=8880, mbox_path=None, callback=None
+):
+    localmail.run(smtp_port, imap_port, http_port, mbox_path, callback)
