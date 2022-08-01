@@ -17,14 +17,15 @@
 
 import random
 import email
-from email.header import decode_header
 import mailbox
 import email.utils
 from itertools import count
+from typing import Union, Optional
+
 try:
     from cStringIO import StringIO
 except ImportError:
-    from io import BytesIO as StringIO
+    from io import BytesIO as StringIO, BytesIO
 
 from zope.interface import implementer
 
@@ -48,25 +49,46 @@ def get_counter():
     return LAST_UID
 
 
+def decode_value(value: Union[str, bytes], encoding: Optional[str] = None) -> str:
+    if isinstance(encoding, str):
+        encoding = encoding.lower()
+    if isinstance(value, bytes):
+        try:
+            return value.decode(encoding or "utf-8", "ignore")
+        except LookupError:  # unknown encoding
+            return value.decode("utf-8", "ignore")
+    return value
+
+
 @implementer(imap4.IMailbox)
 class MemoryIMAPMailbox(object):
 
     mbox = None
 
     def addMessage(self, msg_fp, flags=None, date=None):
+        msg = self._add_message_to_messages(msg_fp, flags, date)
+        if self.mbox is not None:
+            self.mbox.add(msg.msg)
+        self.flush()
+
+    def _add_message_to_messages(self, msg_fp, flags=None, date=None):
         if flags is None:
             flags = []
         if date is None:
             date = email.utils.formatdate()
         msg = Message(msg_fp, flags, date)
-        if self.mbox is not None:
-            self.mbox.add(msg.msg)
         self.msgs.append(msg)
-        self.flush()
+        return msg
 
     def setFile(self, path):
         log.msg("creating mbox file %s" % path)
         self.mbox = mailbox.mbox(path)
+
+        # If the mailbox is pre-populated add to the in-memory mailbox
+        if len(self.mbox):
+            log.msg("Loading %s messages from mbox file" % len(self.mbox))
+            for msg in self.mbox.itervalues():
+                self._add_message_to_messages(StringIO(bytes(msg)), flags=msg.get_flags(), date=msg["Date"])
 
     def flush(self):
         if self.mbox is not None:
@@ -170,8 +192,7 @@ INBOX = MemoryIMAPMailbox()
 
 
 @implementer(imap4.IMessagePart)
-class MessagePart(object):
-
+class MessagePart:
     def __init__(self, msg):
         self.msg = msg
 
@@ -180,10 +201,10 @@ class MessagePart(object):
         if negate:
             for header in self.msg.keys():
                 if header.upper() not in names:
-                    headers[header.lower()] = self.msg.get(header, '')
+                    headers[decode_value(header.lower())] = decode_value(self.msg.get(header, ''))
         else:
             for name in names:
-                headers[name.lower()] = self.msg.get(name, '')
+                headers[decode_value(name.lower())] = decode_value(self.msg.get(name, ''))
         return headers
 
     def getBodyFile(self):
@@ -221,23 +242,14 @@ class MessagePart(object):
                 return chunk.split('=')[1]
         return default
 
-    def unicode(self, header):
-        """Converts a header to unicode"""
-        value = self.msg[header]
-        parts = decode_header(value)
-        return ''.join(
-            decoded_part.decode(codec)
-            if codec is not None else decoded_part.decode('ascii')
-            for decoded_part, codec in parts)
-
 
 @implementer(imap4.IMessage)
 class Message(MessagePart):
-
     def __init__(self, fp, flags, date):
         # email.message_from_binary_file is new in Python 3.3,
         # and we need to use it if we are on Python3.
         if hasattr(email, 'message_from_binary_file'):
+            print(fp)
             parsed_message = email.message_from_binary_file(fp)
         else:
             parsed_message = email.message_from_file(fp)
