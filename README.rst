@@ -1,4 +1,6 @@
-Localmail
+Forked from the original repo `here <https://launchpad.net/localmail>`_.
+
+Localmail Redux
 =========
 
 For local people.
