@@ -9,3 +9,4 @@ build
 .eggs/
 venv/
 .idea/
+.pytest_cache
