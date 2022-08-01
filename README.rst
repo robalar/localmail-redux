@@ -107,3 +107,14 @@ ports the service is listening on.
     thread.start()
 
 
+
+
+Publishing New Version
+----------------------
+
+Handled by ``.github/workflows/publish.yml``.
+
+1. Update the version in ``pyproject.toml``
+2. Get that update merged into main
+3. Tag a commit with the same version with ``v`` prefixed (``0.1.1 in`` pyproject.toml, ``v0.1.1`` git tag)
+4. Wait for the action to build

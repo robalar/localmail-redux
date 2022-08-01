@@ -4,6 +4,9 @@ version = "0.1.0"
 description = ""
 authors = ["Robert Hales <rob.hales@xelix.com>", "Simon Davy <simon.davy@canonical.com>"]
 license = "GNU"
+packages = [
+    { include = "localmail" },
+]
 
 [tool.poetry.dependencies]
 python = ">=3.6.7"
