@@ -13,6 +13,10 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+from time import sleep
+from typing import NamedTuple, Callable
+
+from crochet import setup, run_in_reactor, wait_for
 from twisted.application import service
 from twisted.internet import reactor
 from twisted.cred import portal, checkers
@@ -21,9 +25,10 @@ from .smtp import TestServerESMTPFactory
 from .imap import TestServerIMAPFactory
 from .http import TestServerHTTPFactory, index
 
+setup()
+
 
 class PortReporterTCPServer(service.Service, object):
-
     def __init__(self, name, port, factory, reportPort):
         self.name = name
         self.port = port
@@ -60,32 +65,47 @@ def get_factories():
 def get_services(smtp_port, imap_port, http_port, callback=None):
     smtpFactory, imapFactory, httpFactory = get_factories()
 
-    smtp = PortReporterTCPServer('smtp', smtp_port, smtpFactory, callback)
-    imap = PortReporterTCPServer('imap', imap_port, imapFactory, callback)
-    http = PortReporterTCPServer('http', http_port, httpFactory, callback)
+    smtp = PortReporterTCPServer("smtp", smtp_port, smtpFactory, callback)
+    imap = PortReporterTCPServer("imap", imap_port, imapFactory, callback)
+    http = PortReporterTCPServer("http", http_port, httpFactory, callback)
 
     return smtp, imap, http
 
 
-def run(smtp_port=2025,
-        imap_port=2143,
-        http_port=8880,
-        mbox_path=None,
-        callback=None):
+class ServerPorts(NamedTuple):
+    smtp_port: int
+    imap_port: int
+    http_port: int
+    stop_listening_fn: Callable
+
+
+def run(smtp_port=2025, imap_port=2143, http_port=8880, mbox_path=None) -> ServerPorts:
+    result = _run(smtp_port, imap_port, http_port, mbox_path)
+    return ServerPorts(*result.wait(timeout=30))
+
+
+@wait_for
+def _wait_for_deferred(d):
+    return d
+
+
+@run_in_reactor
+def _run(smtp_port, imap_port, http_port, mbox_path):
     from twisted.internet import reactor
+
     if mbox_path is not None:
         from localmail.inbox import INBOX
+
         INBOX.setFile(mbox_path)
     smtpFactory, imapFactory, httpFactory = get_factories()
     smtp = reactor.listenTCP(smtp_port, smtpFactory)
     imap = reactor.listenTCP(imap_port, imapFactory)
     http = reactor.listenTCP(http_port, httpFactory)
-    if callback is not None:
-        callback(smtp.getHost().port, imap.getHost().port, http.getHost().port)
-    reactor.run(installSignalHandlers=0)
 
+    def stop_listening():
+        _wait_for_deferred(smtp.stopListening())
+        _wait_for_deferred(imap.stopListening())
+        _wait_for_deferred(http.stopListening())
+        sleep(0.1)
 
-def shutdown_thread(thread):
-    from twisted.internet import reactor
-    reactor.callFromThread(reactor.stop)
-    thread.join()
+    return smtp.getHost().port, imap.getHost().port, http.getHost().port, stop_listening

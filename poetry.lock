@@ -91,7 +91,7 @@ python-versions = "*"
 name = "crochet"
 version = "2.0.0"
 description = "Use Twisted anywhere!"
-category = "dev"
+category = "main"
 optional = false
 python-versions = ">=3.6.0"
 
@@ -129,7 +129,7 @@ testing = ["covdefaults (>=1.2.0)", "coverage (>=4)", "pytest (>=4)", "pytest-co
 
 [[package]]
 name = "flake8"
-version = "5.0.1"
+version = "5.0.3"
 description = "the modular source code checker: pep8 pyflakes and co"
 category = "dev"
 optional = false
@@ -479,7 +479,7 @@ testing = ["coverage (>=4)", "coverage-enable-subprocess (>=1)", "flaky (>=3)", 
 name = "wrapt"
 version = "1.14.1"
 description = "Module for decorators, wrappers and monkey patching."
-category = "dev"
+category = "main"
 optional = false
 python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,>=2.7"
 
@@ -511,7 +511,7 @@ testing = ["coverage (>=5.0.3)", "zope.event", "zope.testing"]
 [metadata]
 lock-version = "1.1"
 python-versions = ">=3.6.7"
-content-hash = "e11abca2ec80f1668b6826d8e6f67f066dc467a9908c68fa8be7e44df4d6aabd"
+content-hash = "b56d00c2fef7893c0f394d0743e1851d2c142512391a05307c8ef8f9fc88b12c"
 
 [metadata.files]
 atomicwrites = []
