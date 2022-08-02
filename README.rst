@@ -73,41 +73,15 @@ runner, do the following.
 
 .. code-block:: python
 
-    import threading
     import localmail
 
-    thread = threading.Thread(
-       target=localmail.run,
-       args=(2025, 2143, 8880, 'localmail.mbox')
-    )
-    thread.start()
-
+    server = localmail.run()
     ...
+    server.stop_listening_fn()
 
-    localmail.shutdown_thread(thread)
-
-This will run the twisted reactor in a separate thread, and shut it down on
-exit.
-
-If you want to use random ports, you can pass a callback that will have the
-ports the service is listening on.
-
-.. code-block:: python
-
-    import threading
-    import localmail
-
-    def report(smtp, imap, http):
-        """do stuff with ports"""
-
-    thread = threading.Thread(
-       target=localmail.run,
-       args=(0, 0, 0, None, report)
-    )
-    thread.start()
-
-
-
+This will run the twisted reactor using `crochet <https://crochet.readthedocs.io/en/stable/>`_ in a seperate thread,
+and attach the servers to the ports. ``stop_listening_fn`` **must** be called if you wish to call `localmail.run`
+again.
 
 Publishing New Version
 ----------------------
