@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "localmail-redux"
-version = "0.1.0"
+version = "0.2.0"
 description = ""
 authors = ["Robert Hales <rob.hales@xelix.com>", "Simon Davy <simon.davy@canonical.com>"]
 license = "GNU"
