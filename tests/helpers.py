@@ -111,10 +111,3 @@ class IMAPClient(ContextHelper):
         else:
             msg_set = str(seq).encode('ascii')
         return msg_set
-
-
-@run_in_reactor
-def start_server(
-    smtp_port=2025, imap_port=2143, http_port=8880, mbox_path=None, callback=None
-):
-    localmail.run(smtp_port, imap_port, http_port, mbox_path, callback)

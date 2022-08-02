@@ -1,6 +1,5 @@
 # coding: utf-8
 
-import os
 import time
 import imaplib
 import smtplib
@@ -13,6 +12,8 @@ from email.header import decode_header
 
 import pytest
 
+from .base import BaseLocalmailTest
+
 try:
     from email.generator import BytesGenerator as Generator
 except ImportError:
@@ -23,95 +24,49 @@ except ImportError:
     import unittest  # NOQA
 
 from .helpers import (
-    SMTPClient,
-    IMAPClient,
-    clean_inbox, start_server,
+    IMAPClient
 )
 
-HOST = "localhost"
-SMTP_PORT = 2025
-IMAP_PORT = 2143
-HTTP_PORT = 8880
 
-
-class BaseLocalmailTestcase(unittest.TestCase):
-    @pytest.fixture(scope="class", autouse=True)
-    def server(self):
-        if "LOCALMAIL" in os.environ:
-            # use external server
-            LOCALMAIL = os.getenv("LOCALMAIL")
-            if ":" in LOCALMAIL:
-                HOST, ports = LOCALMAIL.split(":")
-                SMTP_PORT, IMAP_PORT, HTTP_PORT = ports.split(",")
-        else:
-            # use random ports
-            def report(smtp, imap, http):
-                global SMTP_PORT, IMAP_PORT, HTTP_PORT
-                SMTP_PORT = smtp
-                IMAP_PORT = imap
-                HTTP_PORT = http
-
-            start_server(callback=report)
-
-            yield
-
-    def setUp(self):
-        super(BaseLocalmailTestcase, self).setUp()
-        self.addCleanup(clean_inbox, HOST, IMAP_PORT)
-
-
-class AuthTestCase(BaseLocalmailTestcase):
-    def test_smtp_any_auth_allowed(self):
-        smtp = smtplib.SMTP(HOST, SMTP_PORT)
+class TestAuth(BaseLocalmailTest):
+    def test_smtp_any_auth_allowed(self, server):
+        smtp = smtplib.SMTP(self.HOST, server.smtp_port)
         smtp.login("a", "b")
         smtp.sendmail("a@b.com", ["c@d.com"], "Subject: test\n\ntest")
         smtp.quit()
-        smtp = smtplib.SMTP(HOST, SMTP_PORT)
+        smtp = smtplib.SMTP(self.HOST, server.smtp_port)
         smtp.login("c", "d")
         smtp.sendmail("a@b.com", ["c@d.com"], "Subject: test\n\ntest")
         smtp.quit()
 
-    def test_smtp_anonymous_allowed(self):
-        smtp = smtplib.SMTP(HOST, SMTP_PORT)
+    def test_smtp_anonymous_allowed(self, server):
+        smtp = smtplib.SMTP(self.HOST, server.smtp_port)
         smtp.sendmail("a@b.com", ["c@d.com"], "Subject: test\n\ntest")
         smtp.quit()
 
-    def test_imap_any_auth_allowed(self):
-        imap = imaplib.IMAP4(HOST, IMAP_PORT)
+    def test_imap_any_auth_allowed(self, server):
+        imap = imaplib.IMAP4(self.HOST, server.imap_port)
         imap.login("any", "thing")
         imap.select()
-        self.assertEqual(imap.search("ALL"), ("OK", [None]))
+        assert imap.search("ALL") == ("OK", [None])
         imap.close()
         imap.logout()
 
-        imap = imaplib.IMAP4(HOST, IMAP_PORT)
+        imap = imaplib.IMAP4(self.HOST, server.imap_port)
         imap.login("other", "something")
         imap.select()
-        self.assertEqual(imap.search("ALL"), ("OK", [None]))
+        assert imap.search("ALL") == ("OK", [None])
         imap.close()
         imap.logout()
 
-    def test_imap_anonymous_not_allowed(self):
-        imap = imaplib.IMAP4(HOST, IMAP_PORT)
-        with self.assertRaises(imaplib.IMAP4.error):
+    def test_imap_anonymous_not_allowed(self, server):
+        imap = imaplib.IMAP4(self.HOST, server.imap_port)
+        with pytest.raises(imaplib.IMAP4.error):
             imap.select()
-            self.assertEqual(imap.search("ALL"), ("OK", [None]))
+            assert imap.search("ALL") == ("OK", [None])
 
 
-class SequentialIdTestCase(BaseLocalmailTestcase):
-    uid = False
-
-    def setUp(self):
-        super(SequentialIdTestCase, self).setUp()
-        self.smtp = SMTPClient(HOST, SMTP_PORT)
-        self.smtp.start()
-        self.imap = IMAPClient(HOST, IMAP_PORT, uid=self.uid)
-        self.imap.start()
-        msgs = self.imap.search("ALL")
-        self.assertEqual(msgs, [])
-        self.addCleanup(self.smtp.stop)
-        self.addCleanup(self.imap.stop)
-
+class TestSequentialID(BaseLocalmailTest):
     def _testmsg(self, n):
         msg = MIMEText("test %s" % n)
         msg["Subject"] = "test %s" % n
@@ -121,61 +76,65 @@ class SequentialIdTestCase(BaseLocalmailTestcase):
 
     def assert_message(self, msg, n):
         expected = self._testmsg(n)
-        self.assertEqual(msg["From"], expected["From"])
-        self.assertEqual(msg["To"], expected["To"])
-        self.assertEqual(msg["Subject"], expected["Subject"])
-        self.assertEqual(msg.is_multipart(), expected.is_multipart())
+        assert msg["From"] == expected["From"]
+        assert msg["To"] == expected["To"]
+        assert msg["Subject"] == expected["Subject"]
+        assert msg.is_multipart() == expected.is_multipart()
         if msg.is_multipart():
             for part, expected_part in zip(msg.walk(), expected.walk()):
-                self.assertEqual(
-                    part.get_content_maintype(), expected_part.get_content_maintype()
-                )
+                assert part.get_content_maintype() == expected_part.get_content_maintype()
+
                 if part.get_content_maintype() != "multipart":
-                    self.assertEqual(
-                        part.get_payload().strip(), expected_part.get_payload().strip()
+                    assert (
+                        part.get_payload().strip() == expected_part.get_payload().strip()
                     )
         else:
-            self.assertEqual(msg.get_payload().strip(), expected.get_payload().strip())
+            assert msg.get_payload().strip() == expected.get_payload().strip()
 
-    def test_simple_message(self):
-        self.smtp.send(self._testmsg(1))
-        msg = self.imap.fetch(1)
+    def test_simple_message(self, smtp_client, imap_client):
+        smtp_client.send(self._testmsg(1))
+        msg = imap_client.fetch(1)
         self.assert_message(msg, 1)
 
-    def test_multiple_messages(self):
-        self.smtp.send(self._testmsg(1))
-        self.smtp.send(self._testmsg(2))
-        msg1 = self.imap.fetch(1)
-        msg2 = self.imap.fetch(2)
+    def test_multiple_messages(self, smtp_client, imap_client):
+        smtp_client.send(self._testmsg(1))
+        smtp_client.send(self._testmsg(2))
+        msg1 = imap_client.fetch(1)
+        msg2 = imap_client.fetch(2)
         self.assert_message(msg1, 1)
         self.assert_message(msg2, 2)
 
-    def test_delete_single_message(self):
-        self.smtp.send(self._testmsg(1))
-        self.imap.store(1, r"(\Deleted)")
-        self.imap.client.expunge()
-        self.assertEqual(self.imap.search("ALL"), [])
+    def test_delete_single_message(self, smtp_client, imap_client):
+        smtp_client.send(self._testmsg(1))
+        imap_client.store(1, r"(\Deleted)")
+        imap_client.client.expunge()
+        assert imap_client.search("ALL") == []
 
-    def test_delete_with_multiple(self):
-        self.smtp.send(self._testmsg(1))
-        self.smtp.send(self._testmsg(2))
-        self.imap.store(1, r"(\Deleted)")
-        self.imap.client.expunge()
-        self.assertEqual(self.imap.search("ALL"), [self.imap.msgid(1)])
+    def test_delete_with_multiple(self, smtp_client, imap_client):
+        smtp_client.send(self._testmsg(1))
+        smtp_client.send(self._testmsg(2))
+        imap_client.store(1, r"(\Deleted)")
+        imap_client.client.expunge()
+        assert imap_client.search("ALL") == [imap_client.msgid(1)]
 
-    def test_search_deleted(self):
-        self.smtp.send(self._testmsg(1))
-        self.smtp.send(self._testmsg(2))
-        self.imap.store(1, r"(\Deleted)")
-        self.assertEqual(self.imap.search("(DELETED)"), [self.imap.msgid(1)])
-        self.assertEqual(self.imap.search("(NOT DELETED)"), [self.imap.msgid(2)])
-
-
-class UidTestCase(SequentialIdTestCase):
-    uid = True
+    def test_search_deleted(self, smtp_client, imap_client):
+        smtp_client.send(self._testmsg(1))
+        smtp_client.send(self._testmsg(2))
+        imap_client.store(1, r"(\Deleted)")
+        assert imap_client.search("(DELETED)") == [imap_client.msgid(1)]
+        assert imap_client.search("(NOT DELETED)") == [imap_client.msgid(2)]
 
 
-class MultipartTestCase(SequentialIdTestCase):
+class TestUid(TestSequentialID):
+    @pytest.fixture(scope="class")
+    def imap_client(self, server):
+        imap = IMAPClient(self.HOST, server.imap_port, uid=True)
+        imap.start()
+        yield imap
+        imap.stop()
+
+
+class MultipartTestCase(TestSequentialID):
     def _testmsg(self, n):
         msg = MIMEMultipart("alternative")
         msg["Subject"] = "test %s" % n
@@ -188,7 +147,7 @@ class MultipartTestCase(SequentialIdTestCase):
         return msg
 
 
-class EncodingTestCase(BaseLocalmailTestcase):
+class TestEncoding(BaseLocalmailTest):
 
     # These characters are one byte in latin-1 but two in utf-8
     difficult_chars = "£ë"
@@ -204,19 +163,6 @@ class EncodingTestCase(BaseLocalmailTestcase):
     difficult_chars_latin1_compatible = difficult_chars.encode(
         "latin-1", "ignore"
     ).decode("latin-1")
-
-    uid = False
-
-    def setUp(self):
-        super(EncodingTestCase, self).setUp()
-        self.smtp = SMTPClient(HOST, SMTP_PORT)
-        self.smtp.start()
-        self.imap = IMAPClient(HOST, IMAP_PORT, uid=self.uid)
-        self.imap.start()
-        msgs = self.imap.search("ALL")
-        self.assertEqual(msgs, [])
-        self.addCleanup(self.smtp.stop)
-        self.addCleanup(self.imap.stop)
 
     def _encode_message(self, msg):
         with BytesIO() as fp:
@@ -235,66 +181,43 @@ class EncodingTestCase(BaseLocalmailTestcase):
         msg["Subject"] = self.difficult_chars
         msg["From"] = "from@example.com"
         msg["To"] = "to@example.com"
-        self.assertEqual(msg["Content-Transfer-Encoding"], cte)
+        assert msg["Content-Transfer-Encoding"] == cte
         return msg
 
-    def _fetch_and_delete_sole_message(self):
-        message_number = None
+    def _fetch_and_delete_sole_message(self, imap_client):
         for _ in range(5):
             try:
-                (message_number,) = self.imap.search("ALL")
+                (message_number,) = imap_client.search("ALL")
                 break
             except ValueError:
                 time.sleep(0.5)
         else:
             raise AssertionError("Single Message not found")
-        msg = self.imap.fetch(message_number)
-        self.imap.store(message_number, r"(\Deleted)")
-        self.imap.client.expunge()
+        msg = imap_client.fetch(message_number)
+        imap_client.store(message_number, r"(\Deleted)")
+        imap_client.client.expunge()
         return msg
 
-    def _do_test(self, payload, charset, cte):
+    @pytest.mark.parametrize("payload, charset, cte", [
+        pytest.param(difficult_chars_latin1_compatible, "iso-8859-1", "8bit"),
+        pytest.param(difficult_chars, "utf-8", "8bit"),
+        pytest.param(difficult_chars, "utf-8", "quoted-printable"),
+        pytest.param(difficult_chars, "utf-8", "base64"),
+    ])
+    def test_encoding(self, payload, charset, cte, smtp_client, imap_client):
         # Arrange
         msg = self._make_message(payload, charset, cte)
         encoded = self._encode_message(msg)
 
         # Act
-        self.smtp.client.sendmail(msg["From"], msg["To"], encoded)
-        received = self._fetch_and_delete_sole_message()
+        smtp_client.client.sendmail(msg["From"], msg["To"], encoded)
+        received = self._fetch_and_delete_sole_message(imap_client)
 
         # Assert
         payload_bytes = received.get_payload(decode=True)
         payload_text = payload_bytes.decode(received.get_content_charset())
-        self.assertEqual(received["Content-Transfer-Encoding"], cte)
-        self.assertEqual(received.get_content_charset(), charset.lower())
+        assert received["Content-Transfer-Encoding"] == cte
+        assert received.get_content_charset() == charset.lower()
         ((subject_bytes, subject_encoding),) = decode_header(received["Subject"])
-        self.assertEqual(subject_bytes.decode(subject_encoding), self.difficult_chars)
-        self.assertEqual(payload_text.strip(), payload)
-
-    def test_roundtrip_latin_1_mail(self):
-        """
-        Mail with only latin-1 chars can be sent in latin-1
-
-        (8-bit MIME)
-        """
-        self._do_test(self.difficult_chars_latin1_compatible, "iso-8859-1", "8bit")
-
-    def test_roundtrip_utf8_mail(self):
-        """
-        Mail can be sent in utf-8 without encoding
-
-        (8-bit MIME)
-        """
-        self._do_test(self.difficult_chars, "utf-8", "8bit")
-
-    def test_roundtrip_utf8_qp_mail(self):
-        """
-        Mail can be sent in utf-8 in quoted printable format
-        """
-        self._do_test(self.difficult_chars, "utf-8", "quoted-printable")
-
-    def test_roundtrip_utf8_base64_mail(self):
-        """
-        Mail can be sent in utf-8 in quoted printable format
-        """
-        self._do_test(self.difficult_chars, "utf-8", "base64")
+        assert subject_bytes.decode(subject_encoding) == self.difficult_chars
+        assert payload_text.strip() == payload

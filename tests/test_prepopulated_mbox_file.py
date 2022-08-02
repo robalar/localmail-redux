@@ -2,14 +2,14 @@ from email.message import Message
 from mailbox import mbox
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Tuple
 
 import pytest
 
-from tests.helpers import IMAPClient, start_server
+import localmail
+from tests.base import BaseLocalmailTest
 
 
-class TestPrePopulatedMboxFile:
+class TestPrePopulatedMboxFile(BaseLocalmailTest):
     @pytest.fixture(scope="class")
     def mbox_path(self):
         with TemporaryDirectory() as temp_dir:
@@ -28,17 +28,11 @@ class TestPrePopulatedMboxFile:
         mbox.add(msg)
         mbox.flush()
 
-    @pytest.fixture(scope="class")
-    def server(self, populated_mbox, mbox_path) -> Tuple[int, int, int]:
-        start_server(mbox_path=mbox_path)
-        yield 2025, 2143, 8880
-
-    @pytest.fixture(scope="class")
-    def imap_client(self, server) -> IMAPClient:
-        imap = IMAPClient("localhost", server[1], uid=False)
-        imap.start()
-        yield imap
-        imap.stop()
+    @pytest.fixture(scope="class", autouse=True)
+    def server(self, mbox_path, populated_mbox):
+        server = localmail.run(mbox_path=mbox_path)
+        yield server
+        server.stop_listening_fn()
 
     def test_inbox_prepopulated(self, imap_client):
         msg = imap_client.fetch(1)
