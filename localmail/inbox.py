@@ -249,7 +249,6 @@ class Message(MessagePart):
         # email.message_from_binary_file is new in Python 3.3,
         # and we need to use it if we are on Python3.
         if hasattr(email, 'message_from_binary_file'):
-            print(fp)
             parsed_message = email.message_from_binary_file(fp)
         else:
             parsed_message = email.message_from_file(fp)
